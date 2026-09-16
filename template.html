@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+__STYLESHEETS__
+<style>
+html, body { margin: 0; padding: 0; background: #ffffff; }
+#question-modal .cb-modal.cb-dialog-modal { position: static; display: block; opacity: 1; visibility: visible; }
+#question-modal .cb-modal.cb-dialog-modal .cb-modal-overlay { position: static; display: block; background: #ffffff; padding: 0; overflow: visible; }
+#question-modal .cb-modal.cb-dialog-modal .cb-modal-container { height: auto; max-height: none; margin: 0; box-shadow: none; transform: none; animation: none; }
+#question-modal .cb-modal.cb-dialog-modal .cb-modal-container .cb-modal-content { height: auto !important; }
+#question-modal .cb-dialog, #question-modal .cb-dialog-container { height: auto; }
+#question-modal .question-info { overflow: visible; border-bottom: none; }
+#question-modal #question-card { height: auto; }
+#question-modal #question-card .col-xs-12, #question-modal #question-card .col-md-6 { overflow: visible; }
+</style>
+<script>
+  MathJax = {
+    options: {
+      renderActions: {
+        alttext: [
+          1000,
+          (doc) => {
+            for (const math of doc.math)
+              MathJax.config.addAlttext(doc, math);
+          },
+          (doc, math) => MathJax.config.addAlttext(doc, math),
+        ],
+      },
+    },
+    addAlttext(doc, math) {
+      const alttext = math.root.attributes.get("alttext");
+      if (alttext) {
+        doc.adaptor.setAttribute(math.typesetRoot, "aria-label", alttext);
+      }
+    },
+  };
+</script>
+<script>
+  window.__MathJax_State__ = {
+    isReady: false,
+    promise: new Promise(resolve => {
+      window.MathJax = {
+        startup: {
+          typeset: false,
+          ready: () => {
+            MathJax.startup.defaultReady();
+            window.__MathJax_State__.isReady = true;
+            resolve();
+          }
+        }
+      };
+    })
+  };
+</script>
+<script src="https://cdn.jsdelivr.net/npm/dompurify@3/dist/purify.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/mml-svg.js" async></script>
+</head>
+<body>
+<div id="question-modal"></div>
+<script>
+const DIFFICULTY = { E: "Easy", M: "Medium", H: "Hard" };
+
+function h(tag, props, children) {
+  const node = document.createElement(tag);
+  for (const [key, value] of Object.entries(props || {})) {
+    if (key === "className") node.className = value;
+    else if (key === "text") node.textContent = value;
+    else node.setAttribute(key, value);
+  }
+  for (const child of [].concat(children || [])) {
+    if (child === null || child === undefined || child === false) continue;
+    node.append(typeof child === "string" ? document.createTextNode(child) : child);
+  }
+  return node;
+}
+
+function htmlMessage(message) {
+  if (!message) return null;
+  const node = document.createElement("div");
+  node.innerHTML = DOMPurify.sanitize(message, {
+    USE_PROFILES: { html: true, svg: true, mathMl: true },
+    ADD_TAGS: ["use"],
+    ADD_ATTR: ["target", "xlink:href", "alttext"],
+  });
+  return node;
+}
+
+function difficultyIcon(difficulty) {
+  return [
+    h("div", { className: "difficulty-table-icon" }, [
+      h("div", { className: "difficulty-indicator filled" }),
+      h("div", { className: `difficulty-indicator ${difficulty !== "Easy" && "filled"}` }),
+      h("div", { className: `difficulty-indicator ${difficulty === "Hard" && "filled"}` }),
+    ]),
+    h("div", { className: "sr-only", text: difficulty }),
+  ];
+}
+
+function banner(q, difficulty) {
+  return h("div", { className: "question-detail-info" }, h("div", { className: "question-banner" },
+    h("table", { className: "cb-table", "data-cbtrack-comp": "apricot-vanilla:table" }, [
+      h("thead", {}, h("tr", {}, ["Assessment", "Section", "Domain", "Skill", "Difficulty"].map(
+        (title) => h("th", { className: "col-header", text: title })))),
+      h("tbody", {}, h("tr", {}, [
+        h("td", { className: "col-content", text: q.assessment }),
+        h("td", { className: "col-content", text: q.section }),
+        h("td", { className: "col-content", text: q.domain }),
+        h("td", { className: "col-content", text: q.skill }),
+        h("td", { className: "col-content" }, h("div", { className: "difficultyLabel" }, difficultyIcon(difficulty))),
+      ])),
+    ])));
+}
+
+function modernData(raw) {
+  return {
+    rationale: raw.rationale,
+    stem: raw.stem,
+    prompt: raw.stimulus,
+    type: raw.type,
+    answerOptions: raw.answerOptions?.map((option, index) => ({ letter: String.fromCharCode(index + 65), content: option.content })),
+    correctAnswer: raw.correct_answer,
+  };
+}
+
+function questionCard(q, difficulty) {
+  const c = q.legacy ? undefined : modernData(q.content);
+  const d = q.legacy ? q.content : undefined;
+  const legacyChoices = () => {
+    const correct = Object.keys(d.answer.choices).findIndex((key) => d.answer.correct_choice === key);
+    return Object.values(d.answer.choices).map((choice, index) =>
+      h("li", { className: `${correct === index ? "correct" : ""}` }, htmlMessage(choice.body)));
+  };
+  const answerChildren = [];
+  if (c?.type !== "spr" && (c?.answerOptions?.length || d?.answer?.choices)) {
+    answerChildren.push(h("h5", { text: "Answer" }));
+  }
+  if (c?.answerOptions?.length) {
+    answerChildren.push(h("div", { className: "answer-choices cb-margin-top-16 cb-margin-bottom-16" },
+      h("ul", {}, c.answerOptions.map((option) => h("li", {}, htmlMessage(option.content))))));
+  }
+  if (d?.answer?.choices) {
+    answerChildren.push(h("div", { className: "answer-choices cb-margin-top-16 cb-margin-bottom-16" }, h("ul", {}, legacyChoices())));
+  }
+  if (q.reveal) {
+    const correct = c?.correctAnswer.join(", ") ?? d?.answer?.correct_choice?.toUpperCase() ?? d?.answer?.correct_spr?.absolute.join(", ");
+    answerChildren.push(h("div", { className: "rationale" }, [
+      h("h5", { className: "cb-margin-bottom-16 cb-font-weight-bold", text: "Rationale" }),
+      (c || d?.answer?.correct_choice) ? h("p", { className: "cb-margin-bottom-16 cb-font-weight-bold" }, ["Correct Answer:", " ", String(correct)]) : null,
+      c ? htmlMessage(c.rationale) : null,
+      d ? htmlMessage(d.answer?.rationale ?? d.answer?.correct_spr?.rationale) : null,
+    ]));
+  }
+  return h("div", { id: "question-card", className: "row" }, [
+    h("div", { className: "question-content col-xs-12 col-md-6" }, [
+      h("h5", { className: "text", text: q.section }),
+      h("h5", {}, ["Difficulty: ", difficulty]),
+      h("div", { className: "prompt cb-margin-bottom-16" }, [c ? htmlMessage(c.prompt) : null, d ? htmlMessage(d.body) : null]),
+      h("div", { className: "question" }, [c ? htmlMessage(c.stem) : null, d ? htmlMessage(d.prompt) : null]),
+    ]),
+    h("div", { className: "answer-content col-xs-12 col-md-6" }, answerChildren),
+  ]);
+}
+
+function modal(q) {
+  const difficulty = DIFFICULTY[q.difficulty] || "Easy";
+  return h("div", { className: "cb-modal cb-dialog-modal cb-open", id: "modalID1", "aria-hidden": "false" },
+    h("div", { className: "cb-modal-overlay", tabindex: "-1", "data-cb-modal-close": "true" },
+      h("div", { className: "cb-modal-container", role: "alertdialog", "aria-modal": "true", "aria-label": "dialog" },
+        h("div", { className: "cb-modal-content" },
+          h("div", { className: "cb-dialog cb-dialog-dismissible cb-dialog-error", role: "region" },
+            h("div", { className: "cb-dialog-container" }, [
+              h("div", { className: "cb-dialog-header" },
+                h("h4", { className: "cb-roboto cb-font-weight-black", id: "modalTitle", text: `Question ID: ${q.questionId}` })),
+              h("div", { className: "cb-dialog-content" },
+                h("div", { className: "question-info" }, [banner(q, difficulty), questionCard(q, difficulty)])),
+            ]))))));
+}
+
+function waitForImages(root) {
+  return Promise.all([...root.querySelectorAll("img")].map((img) =>
+    img.complete ? null : new Promise((resolve) => { img.onload = resolve; img.onerror = resolve; })));
+}
+
+window.renderQuestion = async (q) => {
+  await window.__MathJax_State__.promise;
+  const root = document.getElementById("question-modal");
+  MathJax.typesetClear();
+  root.replaceChildren(modal(q));
+  await MathJax.typesetPromise([root]);
+  await waitForImages(root);
+  await document.fonts.ready;
+  await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+  return true;
+};
+</script>
+</body>
+</html>
